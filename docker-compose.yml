@@ -1,0 +1,9 @@
+services:
+  mlapp:
+    container_name: mlapp
+    image: mirzsepehr/mlapp
+    ports:
+      - "8000:8000"
+    build:
+      context: .
+      dockerfile: Dockerfile
