@@ -15,6 +15,23 @@ from io import BytesIO
 
 app = FastAPI()
 allowed_image_types = ["image/jpeg", "image/png", "image/gif"]
+resnet = InceptionResnetV1(pretrained="vggface2").eval()
+face_detector_data = cv2.FaceDetectorYN.create(
+                    model=r"/facematch/app/yunet.onnx",
+                    config="",
+                    input_size=(320, 240),
+                    score_threshold=0.9, 
+                    nms_threshold=0.3,
+                    top_k=5000
+                )
+face_detector_anchor = cv2.FaceDetectorYN.create(
+                    model=r"/facematch/app/yunet.onnx",
+                    config="",
+                    input_size=(240, 320),
+                    score_threshold=0.9, 
+                    nms_threshold=0.3,
+                    top_k=5000
+                )
 
 class notReceivedException(Exception):
     def __init__(self, name: str):
@@ -57,10 +74,10 @@ async def convert2PIL(cv2_image):
     to PIL image.
     """
     if cv2_image is None:
-        # print("################ image is empty")
         raise ValueError("File is empty.")
-    # print(f"CV2_image type is:{type(cv2_image)}")
+    
     img = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+
     # opencvImage = cv2_image[:, :, ::-1].copy()
     pil_img = Image.fromarray(img)
 
@@ -99,36 +116,6 @@ async def resize_image(img, target_size):
     """
     resizedImage=cv2.resize(img, target_size, cv2.INTER_AREA)
     return resizedImage
-
-async def get_image_from_url(url):
-    """
-    gets picture from an url and returns it
-    ***returns None if image not found***
-    """
-    response = requests.get(url)
-    if response.status_code == 200:
-        return Image.open(BytesIO(response.content))
-    else:
-        return None
-
-async def load_face_detection_model(img):
-    """
-    This function loads face detection model
-    and retuerns detected faces as a list.
-    """
-    net = cv2.dnn.readNetFromONNX(r"/facematch/app/yunet.onnx")
-    # print(net.getLayerNames())
-    face_detector = cv2.FaceDetectorYN.create(
-                    model=r"/facematch/app/yunet.onnx",
-                    config="",
-                    input_size=(img.shape[1], img.shape[0]),
-                    score_threshold=0.9, 
-                    nms_threshold=0.3,
-                    top_k=5000
-                )
-    #all the detected faces in the single image will be returned as 'faces' variable.
-    faces = face_detector.detect(img)
-    return faces
 
 async def face_extraction(faces_list, img):
     """
@@ -207,7 +194,7 @@ async def predict(lisence_image:Image.Image, image:Image.Image):
     
     #Get embeddings of my model
     tensor_imgData = transform(await grayscale_to_3channels(denoised_image_data))
-    resnet = await load_facematch_model()
+
     embeddings_anchor = resnet(tensor_imgAnchor.unsqueeze(0)).detach()
     embeddings_data = resnet(tensor_imgData.unsqueeze(0)).detach()
 
@@ -239,13 +226,13 @@ async def facematch_api(image_anchor:UploadFile=File(...), image_data:UploadFile
 
     #Some preprocessing on images:
     pil_image_data = pil_image_data.rotate(180)
-    # pil_image_data.save("pilimg_dat.jpg")
-    # pil_image_anchor.save("pilimganch.jpg")
+    
     image_data = await convert2cv2(pil_image_data)
     image_anchor = await convert2cv2(pil_image_anchor)
-    # cv2.imwrite("output.jpg",image_data)
-    faces_data = await load_face_detection_model(image_data)
-    faces_anchor = await load_face_detection_model(image_anchor)
+    
+    faces_data = face_detector_data.detect(image_data)
+    faces_anchor = face_detector_anchor.detect(image_anchor)
+
     extracted_anchor_face = await face_extraction(faces_anchor, image_anchor)
     extracted_data_face = await face_extraction(faces_data, image_data)
 
